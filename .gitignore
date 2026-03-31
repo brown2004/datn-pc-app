@@ -1,0 +1,39 @@
+# Binaries
+/pc-agent
+/pc-ui
+*.exe
+*.dll
+*.dylib
+*.so
+
+# Build artifacts
+/build/
+/dist/
+*.o
+*.a
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+/logs/
+*.log
+
+# Configuration (user-specific)
+.env
+config.toml
+~/.config/pc-app/
+
+# Dependencies (Go modules)
+vendor/
+go.sum
+
+# Temporary files
+tmp/
+temp/
+*.tmp
