@@ -1,6 +1,7 @@
 package host
 
 import (
+	"fmt"
 	"os/exec"
 )
 
@@ -15,17 +16,29 @@ func New() HostService {
 // LockScreen implements [HostService].
 func (l *LinuxService) LockScreen() error {
 	cmd := exec.Command("loginctl", "lock-session")
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("lock screen failed: %w | output: %s", err, string(out))
+	}
+	return nil
 }
 
 // PlayAlarm implements [HostService].
 func (l *LinuxService) PlayAlarm() error {
 	cmd := exec.Command("aplay", "assets/siren_sound.wav")
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("play alarm failed: %w | output: %s", err, string(out))
+	}
+	return nil
 }
 
 // SetMaxVolume implements [HostService].
 func (l *LinuxService) SetMaxVolume() error {
 	cmd := exec.Command("amixer", "sset", "Master", "100%")
-	return cmd.Run()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("set max volume failed: %w | output: %s", err, string(out))
+	}
+	return nil
 }

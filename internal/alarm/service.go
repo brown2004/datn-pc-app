@@ -32,13 +32,25 @@ func (s *AlarmService) Handle(event domain.DeviceEvent) {
 }
 
 func (s *AlarmService) handleUSBRemovedEvent(event domain.DeviceEvent) {
-	s.host.SetMaxVolume()
-	s.host.PlayAlarm()
-	s.host.LockScreen()
+	if err := s.host.SetMaxVolume(); err != nil {
+		fmt.Println("SetMaxVolume error:", err)
+	}
+	if err := s.host.PlayAlarm(); err != nil {
+		fmt.Println("PlayAlarm error:", err)
+	}
+	if err := s.host.LockScreen(); err != nil {
+		fmt.Println("LockScreen error:", err)
+	}
 }
 
 func (s *AlarmService) handleMotionEvent(event domain.DeviceEvent) {
-	s.host.SetMaxVolume()
-	s.host.PlayAlarm()
-	s.host.LockScreen()
+	if err := s.host.SetMaxVolume(); err != nil {
+		fmt.Println("SetMaxVolume error:", err)
+	}
+	if err := s.host.PlayAlarm(); err != nil {
+		fmt.Println("PlayAlarm error:", err)
+	}
+	if err := s.host.LockScreen(); err != nil {
+		fmt.Println("LockScreen error:", err)
+	}
 }
