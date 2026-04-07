@@ -28,7 +28,7 @@ func (m *Monitor) Start() {
 				Timestamp: time.Now().Unix(),
 			}
 
-			fmt.Println("Monitor: detected motion event %s", event.EventType)
+			fmt.Printf("Monitor: detected motion event %s\n", event.EventType)
 			m.out <- event
 			time.Sleep(3 * time.Second)
 
@@ -37,7 +37,7 @@ func (m *Monitor) Start() {
 				Timestamp: time.Now().Unix(),
 			}
 
-			fmt.Println("Monitor: detected USB removed event %s", event.EventType)
+			fmt.Printf("Monitor: detected USB removed event %s\n", event.EventType)
 			m.out <- event
 
 		}

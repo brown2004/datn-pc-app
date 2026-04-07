@@ -6,3 +6,7 @@ type HostService interface {
 	PlayAlarm() error
 	LockScreen() error
 }
+
+func New()	HostService {
+	return newHostService()
+}

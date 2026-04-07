@@ -9,7 +9,7 @@ import (
 type LinuxService struct {
 }
 
-func New() HostService {
+func newHostService() HostService {
 	return &LinuxService{}
 }
 

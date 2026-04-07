@@ -27,7 +27,7 @@ func (s *AlarmService) Handle(event domain.DeviceEvent) {
 		s.handleUSBRemovedEvent(event)
 
 	default:
-		fmt.Println("Phat hien su kien khong xac dinh: %s", event.EventType)
+		fmt.Printf("Phat hien su kien khong xac dinh: %s", event.EventType)
 	}
 }
 
