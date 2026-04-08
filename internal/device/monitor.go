@@ -8,38 +8,54 @@ import (
 
 // TODO: implement device monitor
 type Monitor struct {
-	out chan<- domain.DeviceEvent //out la mot cai channel chua ten cua event
-
+	target     USBTarget
+	interval   time.Duration
+	out        chan<- domain.DeviceEvent //out la mot cai channel chua ten cua event
+	wasPresent bool
 }
 
-func NewMonitor(out chan<- domain.DeviceEvent) *Monitor {
+func NewMonitor(target USBTarget, interval time.Duration, out chan<- domain.DeviceEvent) *Monitor {
 	return &Monitor{
-		out: out,
+		target:   target,
+		interval: interval,
+		out:      out,
 	}
 }
 
-func (m *Monitor) Start() {
-	go func() {
-		for {
-			time.Sleep(3 * time.Second)
+func (m *Monitor) Start() error {
+	present, err := IsUSBTargetPresent(m.target)
+	if err != nil {
+		return err
+	}
 
-			event := domain.DeviceEvent{
-				EventType: domain.EventMotion,
-				Timestamp: time.Now().Unix(),
-			}
+	m.wasPresent = present
 
-			fmt.Printf("Monitor: detected motion event %s\n", event.EventType)
-			m.out <- event
-			time.Sleep(3 * time.Second)
+	go m.loop()
 
-			event = domain.DeviceEvent{
+	return nil
+}
+
+func (m *Monitor) loop() {
+	ticker := time.NewTicker(m.interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		present, err := IsUSBTargetPresent(m.target)
+		if err != nil {
+			fmt.Println("Error checking USB target:", err)
+			continue
+		}
+
+		if m.wasPresent && !present {
+			m.out <- domain.DeviceEvent{
 				EventType: domain.EventUSBRemoved,
 				Timestamp: time.Now().Unix(),
 			}
-
-			fmt.Printf("Monitor: detected USB removed event %s\n", event.EventType)
-			m.out <- event
-
 		}
-	}()
+		if !m.wasPresent && present {
+			fmt.Println("USB target connected")
+		}
+
+		m.wasPresent = present
+	}
 }
