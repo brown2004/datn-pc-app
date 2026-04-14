@@ -15,8 +15,8 @@ func Run() {
 	// khoi tao doi tuong monitor va alarm
 
 	usbTarget := device.USBTarget{
-		VendorID:  "413c", // Thay doi theo USB can theo doi
-		ProductID: "301a", // Thay doi theo USB can theo doi
+		VendorID:  "24AE",
+		ProductID: "2013",// Thay doi theo USB can theo doi
 	}
 	monitor := device.NewMonitor(usbTarget, time.Millisecond*500, eventChan)
 	if err := monitor.Start(); err != nil {
@@ -26,7 +26,7 @@ func Run() {
 	hostService := host.New()
 	alarmService := alarm.NewAlarmService(hostService)
 
-	monitor.Start()
+	
 
 	for event := range eventChan {
 		alarmService.Handle(event)

@@ -6,11 +6,10 @@ import (
 	"time"
 )
 
-// TODO: implement device monitor
 type Monitor struct {
 	target     USBTarget
 	interval   time.Duration
-	out        chan<- domain.DeviceEvent //out la mot cai channel chua ten cua event
+	out        chan<- domain.DeviceEvent
 	wasPresent bool
 }
 
@@ -23,15 +22,16 @@ func NewMonitor(target USBTarget, interval time.Duration, out chan<- domain.Devi
 }
 
 func (m *Monitor) Start() error {
-	present, err := IsUSBTargetPresent(m.target)
+	present, err := isUSBTargetPresent(m.target)
 	if err != nil {
 		return err
 	}
 
+	fmt.Printf("[DEVICE] initial target state: vendor=%s product=%s present=%v\n",
+		m.target.VendorID, m.target.ProductID, present)
+
 	m.wasPresent = present
-
 	go m.loop()
-
 	return nil
 }
 
@@ -40,20 +40,24 @@ func (m *Monitor) loop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		present, err := IsUSBTargetPresent(m.target)
+		present, err := isUSBTargetPresent(m.target)
 		if err != nil {
-			fmt.Println("Error checking USB target:", err)
+			fmt.Println("[DEVICE] error checking USB target:", err)
 			continue
 		}
 
+		fmt.Printf("[DEVICE] poll target state: present=%v, wasPresent=%v\n", present, m.wasPresent)
+
 		if m.wasPresent && !present {
+			fmt.Println("[DEVICE] target USB removed -> emit event")
 			m.out <- domain.DeviceEvent{
 				EventType: domain.EventUSBRemoved,
 				Timestamp: time.Now().Unix(),
 			}
 		}
+
 		if !m.wasPresent && present {
-			fmt.Println("USB target connected")
+			fmt.Println("[DEVICE] target USB connected again")
 		}
 
 		m.wasPresent = present

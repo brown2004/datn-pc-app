@@ -1,7 +1,5 @@
 package device
 
-// TODO: implement usb detection
-
 import (
 	"fmt"
 	"os"
@@ -9,12 +7,7 @@ import (
 	"strings"
 )
 
-type USBTarget struct {
-	VendorID  string
-	ProductID string
-}
-
-func IsUSBTargetPresent(target USBTarget) (bool, error) {
+func isUSBTargetPresent(target USBTarget) (bool, error) {
 	paths, err := filepath.Glob("/sys/bus/usb/devices/*")
 	if err != nil {
 		return false, fmt.Errorf("failed to list USB devices: %w", err)
@@ -29,10 +22,15 @@ func IsUSBTargetPresent(target USBTarget) (bool, error) {
 		if err2 != nil {
 			continue
 		}
-		vendor, product := strings.TrimSpace(string(vendorBytes)), strings.TrimSpace(string(productBytes))
-		if strings.EqualFold(vendor, target.VendorID) && strings.EqualFold(product, target.ProductID) {
+
+		vendor := strings.TrimSpace(string(vendorBytes))
+		product := strings.TrimSpace(string(productBytes))
+
+		if strings.EqualFold(vendor, target.VendorID) &&
+			strings.EqualFold(product, target.ProductID) {
 			return true, nil
 		}
 	}
+
 	return false, nil
 }
