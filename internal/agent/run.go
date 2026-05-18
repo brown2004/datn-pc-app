@@ -8,24 +8,25 @@ import (
 	"pc-app/internal/domain"
 	"pc-app/internal/host"
 	"pc-app/internal/mqtt"
-	"time"
 )
 
 func Run() {
 	eventChan := make(chan domain.DeviceEvent)
 
-	// khoi tao doi tuong monitor va alarm
+	expectedDeviceID := "DATN-F103-1A5A5CCA0000000000048CD2"
 
-	usbTarget := device.USBTarget{
-		VendorID:  "093a",
-		ProductID: "2510", // Thay doi theo USB can theo doi
-	}
+	serialMonitor := device.NewSerialMonitor(expectedDeviceID, eventChan)
+	serialMonitor.Start()
 
-	//monitor:  polling de bat su kien, neu co su kien thi cho vao eventChan
-	monitor := device.NewMonitor(usbTarget, time.Millisecond*500, eventChan)
-	if err := monitor.Start(); err != nil {
-		panic("Failed to start device monitor: " + err.Error())
-	}
+	// usbTarget := device.USBTarget{
+	// 	VendorID:  "093a",
+	// 	ProductID: "2510",
+	// }
+
+	// monitor := device.NewMonitor(usbTarget, time.Millisecond*500, eventChan)
+	// if err := monitor.Start(); err != nil {
+	// 	panic("Failed to start device monitor: " + err.Error())
+	// }
 
 	//host: xu ly can thiep sau cac phan ung tuy thuoc vao he dieu hanh
 	hostService := host.New()
