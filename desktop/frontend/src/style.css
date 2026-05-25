@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    @apply m-0 h-full min-h-[640px] w-full min-w-[900px];
+  }
+
+  body {
+    @apply overflow-hidden bg-[#f6fcfe] font-sans text-[#17324d];
+  }
+
+  button {
+    @apply font-sans;
+  }
+}

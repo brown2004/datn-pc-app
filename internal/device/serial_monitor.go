@@ -41,6 +41,11 @@ func (m *SerialMonitor) loop() {
 		}
 
 		fmt.Printf("[SERIAL] connected to STM32 device on %s, device_id=%s\n", portName, connectedDeviceID)
+		m.eventChan <- domain.DeviceEvent{
+			EventType: domain.EventUSBConnected,
+			Timestamp: time.Now().Unix(),
+			DeviceID:  connectedDeviceID,
+		}
 
 		if err := m.readLoop(portName); err != nil {
 			fmt.Printf("[SERIAL] disconnected or read failed: %v\n", err)
@@ -125,7 +130,7 @@ func (m *SerialMonitor) findDevicePort() (string, string, error) {
 		}
 
 		if m.expectedDeviceID != "" && msg.DeviceID != m.expectedDeviceID {
-			fmt.Printf("[SERIAL] ignore %s: device_id mismatch: %s\n", portName, msg.DeviceID)
+			fmt.Printf("[SERIAL] ignore %s: device_id mismatch: expected=%s actual=%s\n", portName, m.expectedDeviceID, msg.DeviceID)
 			continue
 		}
 
@@ -157,7 +162,7 @@ func (m *SerialMonitor) readLoop(portName string) error {
 		}
 
 		if m.expectedDeviceID != "" && msg.DeviceID != m.expectedDeviceID {
-			fmt.Printf("[SERIAL] ignore message from unknown device_id=%s\n", msg.DeviceID)
+			fmt.Printf("[SERIAL] ignore message from unknown device_id: expected=%s actual=%s\n", m.expectedDeviceID, msg.DeviceID)
 			continue
 		}
 
@@ -223,7 +228,7 @@ func openSerialPort(portName string) (serial.Port, error) {
 	_ = port.SetRTS(true)
 
 	time.Sleep(300 * time.Millisecond)
-	fmt.Println("Da mo cong %s", portName)
+	fmt.Printf("Da mo cong %s\n", portName)
 	return port, nil
 }
 

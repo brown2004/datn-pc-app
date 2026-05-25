@@ -37,3 +37,7 @@ go.sum
 tmp/
 temp/
 *.tmp
+.lite-cache/
+.lite-tmp/
+.tiny-go-cache/
+.tiny-go-tmp/
