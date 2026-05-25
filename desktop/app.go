@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -57,6 +58,7 @@ func NewApp() *App {
 	}
 	app.initLocalStore()
 	app.initAgentClient()
+	app.logf("initialized backend_url=%s", backendURL)
 	return app
 }
 
@@ -65,6 +67,7 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.initAgentClient()
+	a.logf("startup completed")
 }
 
 type Status struct {
@@ -89,6 +92,7 @@ type agentCredentials struct {
 }
 
 type startPairingResponse struct {
+	PCAgentID        string `json:"pc_agent_id"`
 	PairingSessionID string `json:"pairing_session_id"`
 	DeviceCode       string `json:"device_code"`
 	ExpiresIn        int64  `json:"expires_in"`
@@ -130,6 +134,8 @@ func (a *App) GetStatus() Status {
 }
 
 func (a *App) SetProtectionMode(enabled bool) Status {
+	a.logf("protection toggle requested enabled=%t", enabled)
+
 	agentClient, err := a.ensureAgentClient()
 	if err != nil {
 		a.setLastError("Khong ket noi duoc PC Agent local: " + err.Error())
@@ -144,17 +150,17 @@ func (a *App) SetProtectionMode(enabled bool) Status {
 		return a.snapshot()
 	}
 
+	a.clearLastError()
+	a.logf("protection toggle synced to local agent enabled=%t", enabled)
 	return a.GetStatus()
 }
 
 func (a *App) StartPairing() Status {
-	pcAgentID, err := a.getLocalPCAgentID()
+	a.logf("pairing start requested")
+
+	localStore, err := a.ensureLocalStore()
 	if err != nil {
-		a.setLastError("Khong lay duoc ID laptop local: " + err.Error())
-		return a.snapshot()
-	}
-	if strings.TrimSpace(pcAgentID) == "" {
-		a.setLastError("Chua co ID laptop local")
+		a.setLastError("Khong khoi tao duoc local store: " + err.Error())
 		return a.snapshot()
 	}
 
@@ -162,10 +168,10 @@ func (a *App) StartPairing() Status {
 	if err != nil || strings.TrimSpace(hostname) == "" {
 		hostname = "DATN PC"
 	}
+	a.logf("pairing start metadata device_name=%q os_type=%s", hostname, runtime.GOOS)
 
 	var response startPairingResponse
 	err = a.postJSON("/api/pc-agents/pairing/start", map[string]string{
-		"pc_agent_id": pcAgentID,
 		"device_name": hostname,
 		"os_type":     runtime.GOOS,
 	}, &response)
@@ -174,6 +180,17 @@ func (a *App) StartPairing() Status {
 		return a.snapshot()
 	}
 
+	pcAgentID := strings.TrimSpace(response.PCAgentID)
+	if pcAgentID == "" {
+		a.setLastError("Backend khong tra ve pc_agent_id")
+		return a.snapshot()
+	}
+	if err := localStore.SavePCAgentID(pcAgentID); err != nil {
+		a.setLastError("Khong luu duoc ID laptop local: " + err.Error())
+		return a.snapshot()
+	}
+	a.logf("pairing identity saved pc_agent_id=%s", pcAgentID)
+
 	a.mu.Lock()
 	a.deviceCode = response.DeviceCode
 	a.pairingSessionID = response.PairingSessionID
@@ -181,6 +198,14 @@ func (a *App) StartPairing() Status {
 	a.pairingStatus = "waiting for user"
 	a.lastError = ""
 	a.mu.Unlock()
+
+	a.logf(
+		"pairing started pc_agent_id=%s pairing_session_id=%s device_code=%s expires_in=%ds",
+		pcAgentID,
+		response.PairingSessionID,
+		response.DeviceCode,
+		response.ExpiresIn,
+	)
 
 	return a.GetStatus()
 }
@@ -204,13 +229,19 @@ func (a *App) pollPairingStatus(pairingSessionID, deviceCode string) {
 	}
 
 	if response.Status != "confirmed" || response.PCAgentID == "" || response.AgentSecret == "" {
+		newStatus := normalizePairingStatus(response.Status)
 		a.mu.Lock()
-		a.pairingStatus = normalizePairingStatus(response.Status)
+		previousStatus := a.pairingStatus
+		a.pairingStatus = newStatus
 		a.lastError = ""
 		a.mu.Unlock()
+		if newStatus != previousStatus {
+			a.logf("pairing status changed %q -> %q", previousStatus, newStatus)
+		}
 		return
 	}
 
+	a.logf("pairing confirmed pc_agent_id=%s; saving local credentials", response.PCAgentID)
 	credentials := &agentCredentials{
 		PCAgentID:   response.PCAgentID,
 		AgentSecret: response.AgentSecret,
@@ -228,6 +259,7 @@ func (a *App) pollPairingStatus(pairingSessionID, deviceCode string) {
 	a.pairingStatus = "syncing local agent"
 	a.lastError = ""
 	a.mu.Unlock()
+	a.logf("pairing credentials saved locally pc_agent_id=%s", credentials.PCAgentID)
 
 	if err := a.syncAgentCredentials(credentials); err != nil {
 		a.setLastError("Da lien ket backend, nhung chua dong bo PC Agent local: " + err.Error())
@@ -239,6 +271,7 @@ func (a *App) pollPairingStatus(pairingSessionID, deviceCode string) {
 	a.pairingStatus = "linked"
 	a.lastError = ""
 	a.mu.Unlock()
+	a.logf("pairing completed and local agent synced pc_agent_id=%s", credentials.PCAgentID)
 }
 
 func (a *App) snapshot() Status {
@@ -368,6 +401,7 @@ func (a *App) refreshBackendCredentialStatus() {
 			a.pairingStatus = "not started"
 			a.lastError = "Lien ket thiet bi khong con hop le. Vui long lien ket lai."
 			a.mu.Unlock()
+			a.logf("backend rejected local credentials; local credentials cleared pc_agent_id=%s", credentials.PCAgentID)
 			return
 		}
 		a.setLastError(err.Error())
@@ -375,9 +409,13 @@ func (a *App) refreshBackendCredentialStatus() {
 	}
 
 	a.mu.Lock()
+	previousStatus := a.pairingStatus
 	a.pairingStatus = "linked"
 	a.lastError = ""
 	a.mu.Unlock()
+	if previousStatus != "linked" {
+		a.logf("backend credential verification succeeded pc_agent_id=%s", credentials.PCAgentID)
+	}
 }
 
 func (a *App) syncPendingAgentCredentials() error {
@@ -389,6 +427,7 @@ func (a *App) syncPendingAgentCredentials() error {
 	credentials := *a.pendingCredentials
 	a.mu.RUnlock()
 
+	a.logf("retrying pending credential sync pc_agent_id=%s", credentials.PCAgentID)
 	if err := a.syncAgentCredentials(&credentials); err != nil {
 		return err
 	}
@@ -402,6 +441,7 @@ func (a *App) syncPendingAgentCredentials() error {
 	}
 	a.lastError = ""
 	a.mu.Unlock()
+	a.logf("pending credential sync completed pc_agent_id=%s", credentials.PCAgentID)
 
 	return nil
 }
@@ -415,7 +455,11 @@ func (a *App) syncAgentCredentials(credentials *agentCredentials) error {
 	ctx, cancel := a.requestContext()
 	defer cancel()
 
+	a.logf("syncing credentials to local agent pc_agent_id=%s", credentials.PCAgentID)
 	_, err = agentClient.SetCredentials(ctx, credentials.PCAgentID, credentials.AgentSecret)
+	if err == nil {
+		a.logf("credentials synced to local agent pc_agent_id=%s", credentials.PCAgentID)
+	}
 	return err
 }
 
@@ -431,23 +475,16 @@ func (a *App) saveLocalCredentials(credentials *agentCredentials) error {
 	})
 }
 
-func (a *App) getLocalPCAgentID() (string, error) {
-	localStore, err := a.ensureLocalStore()
-	if err != nil {
-		return "", err
-	}
-
-	return localStore.LoadOrCreatePCAgentID()
-}
-
 func (a *App) initLocalStore() {
 	localStore, err := store.New()
 	if err != nil {
 		a.lastError = "Khong khoi tao duoc local store: " + err.Error()
+		a.logErrorf("%s", a.lastError)
 		return
 	}
 
 	a.localStore = localStore
+	a.logf("local store initialized")
 }
 
 func (a *App) ensureLocalStore() (*store.Store, error) {
@@ -486,14 +523,30 @@ func (a *App) currentBackendInputs() (string, string) {
 
 func (a *App) setLastError(message string) {
 	a.mu.Lock()
+	previous := a.lastError
 	a.lastError = message
+	a.mu.Unlock()
+
+	if strings.TrimSpace(message) != "" && message != previous {
+		a.logErrorf("%s", message)
+	}
+}
+
+func (a *App) clearLastError() {
+	a.mu.Lock()
+	a.lastError = ""
 	a.mu.Unlock()
 }
 
 func (a *App) setServerStatus(status string) {
 	a.mu.Lock()
+	previous := a.serverStatus
 	a.serverStatus = status
 	a.mu.Unlock()
+
+	if status != previous {
+		a.logf("backend health status changed %q -> %q", previous, status)
+	}
 }
 
 func (a *App) serverStatusSnapshot() string {
@@ -519,6 +572,7 @@ func (a *App) markUnlinkedIfIdle() {
 
 	if a.pairingStatus == "linked" {
 		a.pairingStatus = "not started"
+		a.logf("local credentials missing; pairing status reset to not started")
 	}
 }
 
@@ -620,4 +674,12 @@ func isBackendStatus(err error, statusCodes ...int) bool {
 	}
 
 	return false
+}
+
+func (a *App) logf(format string, args ...any) {
+	log.Printf("[DESKTOP] "+format, args...)
+}
+
+func (a *App) logErrorf(format string, args ...any) {
+	log.Printf("[DESKTOP][ERROR] "+format, args...)
 }

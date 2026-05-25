@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"pc-app/internal/alarm"
 	"pc-app/internal/backend"
@@ -41,12 +40,7 @@ func Run() {
 	fmt.Printf("[IPC] listening on %s\n", ipc.DefaultAddr)
 
 	eventChan := make(chan domain.DeviceEvent)
-	expectedDeviceID := os.Getenv("PCAPP_DEVICE_ID")
-	if expectedDeviceID == "" {
-		expectedDeviceID = "DATN-F103-1A5A5CCA0000000000048CD2"
-	}
-
-	serialMonitor := device.NewSerialMonitor(expectedDeviceID, eventChan)
+	serialMonitor := device.NewSerialMonitor(eventChan)
 	serialMonitor.Start()
 
 	hostService := host.New()

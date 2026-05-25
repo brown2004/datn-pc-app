@@ -15,7 +15,7 @@ type Config struct {
 func Load() Config {
 	backendURL := strings.TrimSpace(os.Getenv("PCAPP_BACKEND_URL"))
 	if backendURL == "" {
-		backendURL = "http://localhost:8080"
+		backendURL = "http://localhost:8081"
 	}
 
 	return Config{

@@ -14,16 +14,15 @@ import (
 )
 
 const defaultBaudRate = 115200
+const datnDeviceIDPrefix = "DATN"
 
 type SerialMonitor struct {
-	expectedDeviceID string
-	eventChan        chan<- domain.DeviceEvent
+	eventChan chan<- domain.DeviceEvent
 }
 
-func NewSerialMonitor(expectedDeviceID string, eventChan chan<- domain.DeviceEvent) *SerialMonitor {
+func NewSerialMonitor(eventChan chan<- domain.DeviceEvent) *SerialMonitor {
 	return &SerialMonitor{
-		expectedDeviceID: expectedDeviceID,
-		eventChan:        eventChan,
+		eventChan: eventChan,
 	}
 }
 
@@ -129,8 +128,8 @@ func (m *SerialMonitor) findDevicePort() (string, string, error) {
 			continue
 		}
 
-		if m.expectedDeviceID != "" && msg.DeviceID != m.expectedDeviceID {
-			fmt.Printf("[SERIAL] ignore %s: device_id mismatch: expected=%s actual=%s\n", portName, m.expectedDeviceID, msg.DeviceID)
+		if !isDATNDeviceID(msg.DeviceID) {
+			fmt.Printf("[SERIAL] ignore %s: DATN_HELLO device_id must start with %s, actual=%s\n", portName, datnDeviceIDPrefix, msg.DeviceID)
 			continue
 		}
 
@@ -161,8 +160,8 @@ func (m *SerialMonitor) readLoop(portName string) error {
 			continue
 		}
 
-		if m.expectedDeviceID != "" && msg.DeviceID != m.expectedDeviceID {
-			fmt.Printf("[SERIAL] ignore message from unknown device_id: expected=%s actual=%s\n", m.expectedDeviceID, msg.DeviceID)
+		if !isDATNDeviceID(msg.DeviceID) {
+			fmt.Printf("[SERIAL] ignore message from non-DATN device_id: actual=%s\n", msg.DeviceID)
 			continue
 		}
 
@@ -255,4 +254,8 @@ func waitHello(port serial.Port, timeout time.Duration) (DeviceMessage, bool) {
 	}
 
 	return DeviceMessage{}, false
+}
+
+func isDATNDeviceID(deviceID string) bool {
+	return strings.HasPrefix(strings.TrimSpace(deviceID), datnDeviceIDPrefix)
 }

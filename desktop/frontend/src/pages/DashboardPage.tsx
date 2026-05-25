@@ -12,6 +12,7 @@ export function DashboardPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState<Notice>(initialNotice);
+  const [ignoredStatusError, setIgnoredStatusError] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
   async function loadStatus(options: { silent?: boolean } = {}) {
@@ -20,6 +21,7 @@ export function DashboardPage() {
       const next = await getStatus();
       setStatus(next);
       if (!options.silent) {
+        setIgnoredStatusError(next.last_error);
         setNotice({ tone: "success", message: "Cap nhat trang thai he thong thanh cong." });
       }
     } catch (err) {
@@ -31,8 +33,25 @@ export function DashboardPage() {
     try {
       setBusy("protection");
       setError("");
+      const previousStatusError = status.last_error;
       const next = await setProtectionMode(enabled);
       setStatus(next);
+      if (next.last_error && next.last_error !== previousStatusError) {
+        setIgnoredStatusError("");
+        setError(next.last_error);
+        setNotice({ tone: "error", message: next.last_error });
+        return;
+      }
+      if (next.protection_enabled !== enabled) {
+        const message = "Khong cap nhat duoc che do bao ve qua PC Agent local.";
+        setIgnoredStatusError("");
+        setError(message);
+        setNotice({ tone: "error", message });
+        return;
+      }
+
+      setError("");
+      setIgnoredStatusError(next.last_error);
       setNotice({ tone: "success", message: enabled ? "Da bat che do bao ve." : "Da tat che do bao ve." });
     } catch (err) {
       reportError(err, "Cannot update protection mode");
@@ -47,6 +66,7 @@ export function DashboardPage() {
       setError("");
       const next = await startPairing();
       setStatus(next);
+      setIgnoredStatusError(next.last_error);
       setNotice({ tone: "success", message: "Da tao ma lien ket. Nhap ma nay tren mobile app de xac nhan thiet bi." });
     } catch (err) {
       reportError(err, "Cannot start pairing");
@@ -57,6 +77,7 @@ export function DashboardPage() {
 
   function reportError(err: unknown, fallback: string) {
     const message = err instanceof Error ? err.message : fallback;
+    setIgnoredStatusError("");
     setError(message);
     setNotice({ tone: "error", message });
   }
@@ -89,12 +110,13 @@ export function DashboardPage() {
     [now, status.pairing_expires_at],
   );
   const mqttStatus = status.mqtt_status || "not configured";
-  const noticeMessage = error || status.last_error || notice.message;
+  const statusError = status.last_error === ignoredStatusError ? "" : status.last_error;
+  const noticeMessage = error || statusError || notice.message;
 
   return (
     <DashboardView
       status={status}
-      noticeTone={error || status.last_error ? "error" : notice.tone}
+      noticeTone={error || statusError ? "error" : notice.tone}
       noticeMessage={noticeMessage}
       mqttStatus={mqttStatus}
       pairingTimeout={pairingTimeout}

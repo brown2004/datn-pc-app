@@ -45,8 +45,12 @@ func NewApp(cfg config.Config, backendClient *backend.Client, localStore *store.
 
 	if credentials, err := localStore.LoadCredentials(); err == nil {
 		app.credentials = credentials
+		app.logf("loaded local credentials pc_agent_id=%s", credentials.PCAgentID)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		app.lastError = err.Error()
+		app.logErrorf("%s", err.Error())
+	} else {
+		app.logf("no local credentials found")
 	}
 
 	return app, nil
@@ -57,8 +61,11 @@ func (a *App) Status(ctx context.Context) (ipc.Status, error) {
 }
 
 func (a *App) Identity(ctx context.Context) (ipc.Identity, error) {
-	pcAgentID, err := a.store.LoadOrCreatePCAgentID()
+	pcAgentID, err := a.store.LoadPCAgentID()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return ipc.Identity{}, nil
+		}
 		return ipc.Identity{}, err
 	}
 
@@ -68,9 +75,11 @@ func (a *App) Identity(ctx context.Context) (ipc.Identity, error) {
 func (a *App) CredentialsStatus(ctx context.Context) (ipc.CredentialsStatus, error) {
 	credentials := a.currentCredentials()
 	if credentials == nil {
+		a.logf("credentials status requested: no local credentials")
 		return ipc.CredentialsStatus{}, nil
 	}
 
+	a.logf("verifying credentials with backend pc_agent_id=%s", credentials.PCAgentID)
 	if _, err := a.backend.Verify(ctx, credentials.PCAgentID, credentials.AgentSecret); err != nil {
 		if isBackendStatus(err, http.StatusUnauthorized, http.StatusNotFound) {
 			a.clearCredentials("Lien ket thiet bi khong con hop le. Vui long lien ket lai.")
@@ -88,6 +97,7 @@ func (a *App) CredentialsStatus(ctx context.Context) (ipc.CredentialsStatus, err
 	a.mu.Lock()
 	a.lastError = ""
 	a.mu.Unlock()
+	a.logf("credentials verified with backend pc_agent_id=%s", credentials.PCAgentID)
 
 	return ipc.CredentialsStatus{
 		HasCredentials: true,
@@ -96,6 +106,8 @@ func (a *App) CredentialsStatus(ctx context.Context) (ipc.CredentialsStatus, err
 }
 
 func (a *App) SetProtection(ctx context.Context, enabled bool) (ipc.Status, error) {
+	a.logf("protection update requested enabled=%t", enabled)
+
 	a.mu.Lock()
 	a.protectionEnabled = enabled
 	a.lastError = ""
@@ -103,9 +115,11 @@ func (a *App) SetProtection(ctx context.Context, enabled bool) (ipc.Status, erro
 
 	credentials := a.currentCredentials()
 	if credentials == nil {
+		a.logf("protection updated locally only enabled=%t; missing credentials", enabled)
 		return a.snapshot(), nil
 	}
 
+	a.logf("syncing protection to backend pc_agent_id=%s enabled=%t", credentials.PCAgentID, enabled)
 	_, err := a.backend.SetProtection(ctx, credentials.PCAgentID, credentials.AgentSecret, enabled)
 	if err != nil {
 		if isBackendStatus(err, http.StatusUnauthorized, http.StatusNotFound) {
@@ -115,11 +129,14 @@ func (a *App) SetProtection(ctx context.Context, enabled bool) (ipc.Status, erro
 		a.setLastError(err.Error())
 		return a.snapshot(), nil
 	}
+	a.logf("protection synced to backend pc_agent_id=%s enabled=%t", credentials.PCAgentID, enabled)
 
 	return a.snapshot(), nil
 }
 
 func (a *App) SetCredentials(ctx context.Context, pcAgentID string, agentSecret string) (ipc.Status, error) {
+	a.logf("credentials sync received pc_agent_id=%s", strings.TrimSpace(pcAgentID))
+
 	credentials := store.Credentials{
 		PCAgentID:   strings.TrimSpace(pcAgentID),
 		AgentSecret: strings.TrimSpace(agentSecret),
@@ -137,6 +154,7 @@ func (a *App) SetCredentials(ctx context.Context, pcAgentID string, agentSecret 
 	a.credentials = &credentials
 	a.lastError = ""
 	a.mu.Unlock()
+	a.logf("credentials saved pc_agent_id=%s", credentials.PCAgentID)
 
 	return a.snapshot(), nil
 }
@@ -148,12 +166,17 @@ func (a *App) HandleDeviceEvent(event domain.DeviceEvent) {
 	a.lastEvent = event.EventType
 	a.lastEventAt = time.Unix(event.Timestamp, 0).UTC()
 	a.mu.Unlock()
+	a.logf("device event type=%s device_id=%s score_mg=%d", event.EventType, event.DeviceID, event.ScoreMG)
 }
 
 func (a *App) MarkMQTTStatus(status string) {
 	a.mu.Lock()
+	previous := a.mqttStatus
 	a.mqttStatus = status
 	a.mu.Unlock()
+	if status != previous {
+		a.logf("mqtt status changed %q -> %q", previous, status)
+	}
 }
 
 func (a *App) ProtectionEnabled() bool {
@@ -211,8 +234,12 @@ func (a *App) currentCredentials() *store.Credentials {
 
 func (a *App) setLastError(message string) {
 	a.mu.Lock()
+	previous := a.lastError
 	a.lastError = message
 	a.mu.Unlock()
+	if strings.TrimSpace(message) != "" && message != previous {
+		a.logErrorf("%s", message)
+	}
 }
 
 func (a *App) clearCredentials(message string) {
@@ -224,6 +251,7 @@ func (a *App) clearCredentials(message string) {
 	a.credentials = nil
 	a.lastError = message
 	a.mu.Unlock()
+	a.logErrorf("%s", message)
 }
 
 func isBackendStatus(err error, statusCodes ...int) bool {
@@ -239,4 +267,12 @@ func isBackendStatus(err error, statusCodes ...int) bool {
 	}
 
 	return false
+}
+
+func (a *App) logf(format string, args ...any) {
+	fmt.Printf("[AGENT] "+format+"\n", args...)
+}
+
+func (a *App) logErrorf(format string, args ...any) {
+	fmt.Printf("[AGENT][ERROR] "+format+"\n", args...)
 }

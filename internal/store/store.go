@@ -1,10 +1,8 @@
 package store
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +38,7 @@ func New() (*Store, error) {
 	return &Store{dir: dir}, nil
 }
 
-func (s *Store) LoadOrCreatePCAgentID() (string, error) {
+func (s *Store) LoadPCAgentID() (string, error) {
 	var identity Identity
 	if err := readJSON(s.identityPath(), &identity); err == nil {
 		pcAgentID := strings.TrimSpace(identity.PCAgentID)
@@ -51,20 +49,32 @@ func (s *Store) LoadOrCreatePCAgentID() (string, error) {
 		return "", err
 	}
 
-	pcAgentID, err := generateUUID()
+	credentials, err := s.LoadCredentials()
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", os.ErrNotExist
+		}
 		return "", err
 	}
 
-	identity = Identity{
-		PCAgentID: pcAgentID,
-		CreatedAt: time.Now().UTC(),
-	}
-	if err := writeJSON(s.identityPath(), identity); err != nil {
-		return "", err
+	pcAgentID := strings.TrimSpace(credentials.PCAgentID)
+	if pcAgentID == "" {
+		return "", os.ErrNotExist
 	}
 
 	return pcAgentID, nil
+}
+
+func (s *Store) SavePCAgentID(pcAgentID string) error {
+	pcAgentID = strings.TrimSpace(pcAgentID)
+	if pcAgentID == "" {
+		return errors.New("pc agent id is required")
+	}
+
+	return writeJSON(s.identityPath(), Identity{
+		PCAgentID: pcAgentID,
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 func (s *Store) LoadCredentials() (*Credentials, error) {
@@ -80,6 +90,10 @@ func (s *Store) LoadCredentials() (*Credentials, error) {
 }
 
 func (s *Store) SaveCredentials(credentials Credentials) error {
+	if err := s.SavePCAgentID(credentials.PCAgentID); err != nil {
+		return err
+	}
+
 	credentials.SavedAt = time.Now().UTC()
 	return writeJSON(s.credentialsPath(), credentials)
 }
@@ -94,25 +108,6 @@ func (s *Store) credentialsPath() string {
 
 func (s *Store) identityPath() string {
 	return filepath.Join(s.dir, "identity.json")
-}
-
-func generateUUID() (string, error) {
-	var bytes [16]byte
-	if _, err := rand.Read(bytes[:]); err != nil {
-		return "", err
-	}
-
-	bytes[6] = (bytes[6] & 0x0f) | 0x40
-	bytes[8] = (bytes[8] & 0x3f) | 0x80
-
-	return fmt.Sprintf(
-		"%x-%x-%x-%x-%x",
-		bytes[0:4],
-		bytes[4:6],
-		bytes[6:8],
-		bytes[8:10],
-		bytes[10:16],
-	), nil
 }
 
 func readJSON(path string, target any) error {
